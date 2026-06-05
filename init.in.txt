@@ -586,7 +586,6 @@ export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 
 # Welcome message
 echo "Welcome to LeakOS Live!"
-echo "Type 'help' for available commands"
 EOF
 
   # .profile untuk live
@@ -686,8 +685,8 @@ EOF
     fi
   done
   
-  if grep -q "live.*NOPASSWD" /.root/etc/sudoers; then
-    log_msg "✓ sudoers configured for live (NOPASSWD)"
+  if grep -q "live.*PASSWD" /.root/etc/sudoers; then
+    log_msg "✓ sudoers configured for live (PASSWD)"
   fi
   
   if [ -d /.root/home/live ]; then
@@ -813,21 +812,6 @@ else
     PS1='\u@\h:\w\$ '
 fi
 
-# =====================================================
-  # /etc/bashrc global — PS1 otomatis beda warna root vs user
-  # =====================================================
-  cat > /.root/etc/bashrc << 'EOF'
-# /etc/bashrc - Global bash settings
-
-# PS1 berdasarkan user: merah untuk root, hijau untuk user biasa
-if [ "$EUID" -eq 0 ]; then
-    # Root — merah
-    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\# '
-else
-    # User biasa — hijau
-    PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-fi
-
 # Color support for ls
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
@@ -848,8 +832,7 @@ alias ...='cd ../..'
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 
 # Welcome message
-echo "Welcome to LeakOS Live! (root)"
-echo "Type 'help' for available commands"
+echo "Welcome to LeakOS Live!"
 EOF
 
   # .profile untuk root — wajib agar sudo su baca .bashrc
@@ -953,17 +936,6 @@ polkit.addAdminRule(function(action, subject) {
 });
 EOF
 
-  # =====================================================
-  # Konfigurasi LightDM
-  # =====================================================
-  mkdir -p /.root/etc/lightdm
-  cat > /.root/etc/lightdm/lightdm.conf << 'EOF'
-[Seat:*]
-autologin-user=live
-autologin-user-timeout=0
-user-session=xfce
-greeter-session=lightdm-gtk-greeter
-EOF
 
   # =====================================================
   # Setup NetworkManager config
@@ -982,16 +954,47 @@ EOF
     echo "leakos-$(date +%Y%m%d)" > /.root/etc/machine-id
   fi
 
+
   # =====================================================
-  # Create /etc/resolv.conf (fallback)
+  # /etc/bashrc global — PS1 otomatis beda warna root vs user
   # =====================================================
-  if [ ! -f /.root/etc/resolv.conf ]; then
-    cat > /.root/etc/resolv.conf << 'EOF'
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-nameserver 1.1.1.1
+  cat > /.root/etc/bashrc << 'EOF'
+# /etc/bashrc - Global bash settings
+
+# PS1 berdasarkan user: merah untuk root, hijau untuk user biasa
+if [ "$EUID" -eq 0 ]; then
+    # Root — merah
+    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\# '
+else
+    # User biasa — hijau
+    PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+fi
+
+# Color support for ls
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+fi
+
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
 EOF
-  fi
+
+  # /etc/profile — source /etc/bashrc
+  cat > /.root/etc/profile << 'EOF'
+# /etc/profile
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+if [ -f /etc/bashrc ]; then
+    . /etc/bashrc
+fi
+
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+EOF
 
   log_msg "System files ready"
 }
@@ -1148,7 +1151,7 @@ else
   # WiFi
   modprobe -q mac80211   || true
   modprobe -q cfg80211   || true
-  modprobe -q r8188eu    || true
+  modprobe -q 8188eu    || true
   modprobe -q rtl8192ce  || true
   modprobe -q rtl8xxxu   || true
   modprobe -q ath9k      || true
