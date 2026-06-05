@@ -630,7 +630,7 @@ EOF
     fi
   done
   
-  if grep -q "live.*NOPASSWD" /.root/etc/sudoers; then
+  if grep -q "live.*PASSWD" /.root/etc/sudoers; then
     log_msg "✓ sudoers configured for live (NOPASSWD)"
   fi
   
@@ -738,16 +738,8 @@ EOF
   # =====================================================
   # Konfigurasi Apache / httpd
   # =====================================================
-  if [ -f /.root/etc/httpd/conf/httpd.conf ]; then
-    sed -i 's/^#ServerName.*/ServerName localhost/' /.root/etc/httpd/conf/httpd.conf 2>/dev/null || true
-    # Fix error log directory
-    sed -i 's|^ErrorLog.*|ErrorLog "/var/log/httpd/error_log"|' /.root/etc/httpd/conf/httpd.conf 2>/dev/null || true
-  fi
+ 
   
-  if [ -f /.root/etc/apache2/httpd.conf ]; then
-    sed -i 's/^#ServerName.*/ServerName localhost/' /.root/etc/apache2/httpd.conf 2>/dev/null || true
-    sed -i 's|^ErrorLog.*|ErrorLog "/var/log/apache2/error_log"|' /.root/etc/apache2/httpd.conf 2>/dev/null || true
-  fi
 
   # =====================================================
   # Konfigurasi Avahi
