@@ -343,7 +343,7 @@ colord:*:19490:0:99999:7:::
 rtkit:*:19490:0:99999:7:::
 usbmux:*:19490:0:99999:7:::
 ntp:*:19490:0:99999:7:::
-live:$6$leakos$dDT43HQEPyDHlPKkmwvO2bN0Whj0bi4ECpuGonng4gSwe7Bay4sG5BiP5B9rinGaSQHzEwYB/xWfurqtpgHZV0:19490:0:99999:7:::
+live:$6$Sl9yP6SvbA1I8qg1$hN4tpC7RBQENGpCIyl/UrF9SzBppGQ7nWrrPgtrSbno8Bzmzm61WmmsTsrURsWlzbyIgHHGioTc9VyL.LoLKt/:19490:0:99999:7:::
 EOF
 
   chmod 600 /.root/etc/shadow
@@ -837,6 +837,20 @@ echo "Welcome to LeakOS Live! (root)"
 echo "Type 'help' for available commands"
 EOF
 
+  # .profile untuk root — wajib agar sudo su baca .bashrc
+  cat > /.root/.profile << 'EOF'
+# ~/.profile for root
+if [ -n "$BASH_VERSION" ]; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc"
+    fi
+fi
+export PATH="$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+EOF
+
+  # Pastikan /root ada, permission benar, dan .bashrc ada di sana
+  mkdir -p /.root/root
+  chmod 700 /.root/root
 
 
   # =====================================================
