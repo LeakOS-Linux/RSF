@@ -1,10 +1,5 @@
 #!/bin/sh
 # Init script for LeakOS Live ISO
-# Auto-detect boot media, robust /proc mount handling
-# Fixed: try_mount global, Ventoy loop timing, case pattern, exfat support
-# FIXED: ensure_users works correctly with overlay
-# REMOVED: Public and Templates directories
-# FIXED: live user with correct MD5 password hash
 
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
@@ -1049,7 +1044,7 @@ do_mount_root() {
   log_msg "Overlay mounted at /.root"
 
   # Pastikan direktori penting ada setelah overlay
-  mkdir -p /.root/etc /.root/home /.root/root /.root/var/log /.root/tmp /.root/run
+  mkdir -p /.root/etc /.root/home /.root/var/log /.root/tmp /.root/run
   mkdir -p /.root/var/lib /.root/var/spool /.root/var/cache
   
   # Copy resolv.conf jika ada
@@ -1160,7 +1155,6 @@ else
   # GPU / display
   modprobe -q vboxvideo  || true
   modprobe -q virtio_gpu || true
-  modprobe -q vmwgfx     || true
   modprobe -q drm        || true
 
   udevadm trigger --action=add 2>/dev/null || true
