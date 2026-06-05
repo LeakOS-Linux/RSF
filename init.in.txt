@@ -429,7 +429,7 @@ Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/b
 
 # User privilege specification
 root ALL=(ALL:ALL) ALL
-live ALL=(ALL:ALL) NOPASSWD: ALL
+live ALL=(ALL:ALL) ALL
 
 # Allow members of group sudo to execute any command
 %sudo ALL=(ALL:ALL) ALL
@@ -493,9 +493,9 @@ if [ ! -f /var/log/firstboot.done ]; then
   # Set password untuk live user (jika masih kosong)
   if grep -q "^live::" /etc/shadow 2>/dev/null; then
     echo "Setting password for user 'live'..."
-    echo "live:leak" | chpasswd 2>/dev/null
+    echo "live:leakos" | chpasswd 2>/dev/null
     if [ $? -eq 0 ]; then
-      echo "✓ Password set to: leak"
+      echo "✓ Password set to: leakos"
     else
       echo "⚠ Failed to set password via chpasswd, trying alternate method..."
       # Alternate method
@@ -723,6 +723,20 @@ tmpfs           /run      tmpfs    defaults,noatime  0 0
 EOF
     chmod 644 /.root/etc/fstab
   fi
+
+mkdir -p /.root/etc/udev/rules.d
+  
+  cat > /.root/etc/udev/rules.d/70-persistent-net.rules << 'EOF'
+# Udev rules for persistent network interface names
+# Rename first WiFi interface to wlan0
+
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", KERNEL=="wl*|wlan*|wlp*", ATTR{type}=="1", NAME="wlan0"
+EOF
+
+  cat > /.root/etc/udev/rules.d/71-wifi-detection.rules << 'EOF'
+# Trigger WiFi module loading
+ACTION=="add", SUBSYSTEM=="pci", ENV{ID_NET_DRIVER}=="iwlwifi|ath9k|b43|rtl*", RUN+="/sbin/modprobe $env{ID_NET_DRIVER}"
+EOF
 
   # =====================================================
   # /etc/hostname
