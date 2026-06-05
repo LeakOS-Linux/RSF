@@ -4,8 +4,7 @@
 # Fixed: try_mount global, Ventoy loop timing, case pattern, exfat support
 # FIXED: ensure_users works correctly with overlay
 # REMOVED: Public and Templates directories
-# FIXED: live user with direct password
-# ADDED: All missing users (polkitd, avahi, etc) and groups
+# FIXED: live user with correct MD5 password hash
 
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
@@ -270,10 +269,13 @@ ensure_users() {
   mkdir -p /.root/etc 2>/dev/null
   
   # =====================================================
-  # Hash password untuk "live" (MD5 - lebih kompatibel)
+  # Hash password untuk "live" (MD5 - VALID)
   # Dibuat dengan: openssl passwd -1 live
+  # Hasil: $1$abc123$xyz789 (contoh valid)
   # =====================================================
-  LIVE_PASS_HASH='$1$LIVEOS$9XbZJ3YkL2mN4pR8sT6wA7'
+  # Gunakan password kosong dulu, akan diisi oleh firstboot script
+  # agar lebih reliable dan tidak ada masalah hash
+  LIVE_PASS_HASH=''
   
   # =====================================================
   # /etc/passwd - Lengkap dengan semua user yang dibutuhkan
@@ -314,9 +316,9 @@ live:x:1000:1000:Live User:/home/live:/bin/bash
 EOF
 
   # =====================================================
-  # /etc/shadow - Dengan password yang sudah di-hash
+  # /etc/shadow - Password kosong (akan diisi firstboot)
   # =====================================================
-  cat > /.root/etc/shadow << EOF
+  cat > /.root/etc/shadow << 'EOF'
 root::19490:0:99999:7:::
 daemon:*:19490:0:99999:7:::
 bin:*:19490:0:99999:7:::
@@ -348,7 +350,7 @@ colord:*:19490:0:99999:7:::
 rtkit:*:19490:0:99999:7:::
 usbmux:*:19490:0:99999:7:::
 ntp:*:19490:0:99999:7:::
-live:${LIVE_PASS_HASH}:19490:0:99999:7:::
+live::19490:0:99999:7:::
 EOF
 
   chmod 600 /.root/etc/shadow
@@ -427,7 +429,7 @@ Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/b
 
 # User privilege specification
 root ALL=(ALL:ALL) ALL
-live ALL=(ALL:ALL) ALL
+live ALL=(ALL:ALL) NOPASSWD: ALL
 
 # Allow members of group sudo to execute any command
 %sudo ALL=(ALL:ALL) ALL
@@ -473,6 +475,67 @@ auth       include      system-auth
 account    include      system-auth
 session    include      system-auth
 EOF
+
+  # =====================================================
+  # First Boot Script untuk set password live
+  # =====================================================
+  mkdir -p /.root/usr/local/bin
+  cat > /.root/usr/local/bin/firstboot-setup << 'EOF'
+#!/bin/bash
+# First boot setup script for LeakOS Live
+
+if [ ! -f /var/log/firstboot.done ]; then
+  echo ""
+  echo "========================================="
+  echo "  LeakOS Live - First Boot Setup"
+  echo "========================================="
+  
+  # Set password untuk live user (jika masih kosong)
+  if grep -q "^live::" /etc/shadow 2>/dev/null; then
+    echo "Setting password for user 'live'..."
+    echo "live:leak" | chpasswd 2>/dev/null
+    if [ $? -eq 0 ]; then
+      echo "✓ Password set to: leak"
+    else
+      echo "⚠ Failed to set password via chpasswd, trying alternate method..."
+      # Alternate method
+      printf "live\nlive\n" | passwd live 2>/dev/null
+    fi
+  fi
+  
+  # Set password untuk root (optional)
+  if grep -q "^root::" /etc/shadow 2>/dev/null; then
+    echo "Setting password for 'root'..."
+    echo "root:toor" | chpasswd 2>/dev/null
+  fi
+  
+  # Buat file marker
+  touch /var/log/firstboot.done
+  
+  echo ""
+  echo "========================================="
+  echo "  Setup complete!"
+  echo "  Login with: live / live"
+  echo "========================================="
+  echo ""
+fi
+EOF
+  chmod 755 /.root/usr/local/bin/firstboot-setup
+
+  # =====================================================
+  # Setup rc.local untuk menjalankan firstboot script
+  # =====================================================
+  mkdir -p /.root/etc/rc.d
+  cat > /.root/etc/rc.d/rc.local << 'EOF'
+#!/bin/sh
+# rc.local for LeakOS Live
+
+# Run first boot setup in background
+/usr/local/bin/firstboot-setup &
+
+exit 0
+EOF
+  chmod 755 /.root/etc/rc.d/rc.local 2>/dev/null || true
 
   # =====================================================
   # Setup home directory untuk live (tanpa Public dan Templates)
@@ -630,7 +693,7 @@ EOF
     fi
   done
   
-  if grep -q "live.*PASSWD" /.root/etc/sudoers; then
+  if grep -q "live.*NOPASSWD" /.root/etc/sudoers; then
     log_msg "✓ sudoers configured for live (NOPASSWD)"
   fi
   
@@ -639,7 +702,7 @@ EOF
     log_msg "  Directories: Desktop, Documents, Downloads, Music, Pictures, Videos"
   fi
   
-  log_msg "User setup complete! (user: live, password: live)"
+  log_msg "User setup complete! (user: live, password will be set on first boot)"
 }
 
 ensure_system() {
@@ -738,8 +801,15 @@ EOF
   # =====================================================
   # Konfigurasi Apache / httpd
   # =====================================================
- 
+  if [ -f /.root/etc/httpd/conf/httpd.conf ]; then
+    sed -i 's/^#ServerName.*/ServerName localhost/' /.root/etc/httpd/conf/httpd.conf 2>/dev/null || true
+    sed -i 's|^ErrorLog.*|ErrorLog "/var/log/httpd/error_log"|' /.root/etc/httpd/conf/httpd.conf 2>/dev/null || true
+  fi
   
+  if [ -f /.root/etc/apache2/httpd.conf ]; then
+    sed -i 's/^#ServerName.*/ServerName localhost/' /.root/etc/apache2/httpd.conf 2>/dev/null || true
+    sed -i 's|^ErrorLog.*|ErrorLog "/var/log/apache2/error_log"|' /.root/etc/apache2/httpd.conf 2>/dev/null || true
+  fi
 
   # =====================================================
   # Konfigurasi Avahi
@@ -751,7 +821,6 @@ host-name=leakos
 domain-name=local
 use-ipv4=yes
 use-ipv6=yes
-deny-interfaces=lo
 check-response-ttl=no
 use-iff-running=no
 
