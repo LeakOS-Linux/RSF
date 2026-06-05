@@ -269,13 +269,6 @@ ensure_users() {
   mkdir -p /.root/etc 2>/dev/null
   
   # =====================================================
-  # Hash password untuk "live" (MD5 - VALID)
-  # Dibuat dengan: openssl passwd -1 live
-  # Hasil: $1$abc123$xyz789 (contoh valid)
-  # =====================================================
-  # Gunakan password kosong dulu, akan diisi oleh firstboot script
-  # agar lebih reliable dan tidak ada masalah hash
-  LIVE_PASS_HASH=''
   
   # =====================================================
   # /etc/passwd - Lengkap dengan semua user yang dibutuhkan
@@ -319,7 +312,7 @@ EOF
   # /etc/shadow - Password kosong (akan diisi firstboot)
   # =====================================================
   cat > /.root/etc/shadow << 'EOF'
-root::19490:0:99999:7:::
+root:$6$leakos$iZ2h.Cd1jhjXdwAqaNqT36fsrPTKrazstfj1UCVpeDj0KarqnJrv.LfXlFJ.YRZDapuC81UzfO8wcx70k.iUs0:19490:0:99999:7:::
 daemon:*:19490:0:99999:7:::
 bin:*:19490:0:99999:7:::
 sys:*:19490:0:99999:7:::
@@ -350,7 +343,7 @@ colord:*:19490:0:99999:7:::
 rtkit:*:19490:0:99999:7:::
 usbmux:*:19490:0:99999:7:::
 ntp:*:19490:0:99999:7:::
-live::19490:0:99999:7:::
+live:$6$leakos$dDT43HQEPyDHlPKkmwvO2bN0Whj0bi4ECpuGonng4gSwe7Bay4sG5BiP5B9rinGaSQHzEwYB/xWfurqtpgHZV0:19490:0:99999:7:::
 EOF
 
   chmod 600 /.root/etc/shadow
@@ -799,10 +792,49 @@ EOF
   # =====================================================
   cat > /.root/.bashrc << 'EOF'
 # ~/.bashrc for root
-export PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# History settings
+HISTCONTROL=ignoreboth
+shopt -s histappend
+HISTSIZE=1000
+HISTFILESIZE=2000
+shopt -s checkwinsize
+
+# Color prompt — merah untuk root
+if [ "$TERM" != "dumb" ]; then
+    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+else
+    PS1='\u@\h:\w\$ '
+fi
+
+# Color support for ls
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+    alias fgrep='fgrep --color=auto'
+    alias egrep='egrep --color=auto'
+fi
+
+# Aliases
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+
+# Custom PATH
+export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
+# Welcome message
+echo "Welcome to LeakOS Live! (root)"
+echo "Type 'help' for available commands"
 EOF
 
 
@@ -938,27 +970,8 @@ EOF
 do_mount_root() {
   log_msg "Mounting root filesystem (squashfs + overlay)"
 
-  modprobe -q squashfs   || true
-  modprobe -q overlay    || true
-  modprobe -q loop       || true
-  modprobe -q vfat       || true
-  modprobe -q exfat      || true
-  modprobe -q iso9660    || true
-  modprobe r8188eu || true
-  modprobe rtl8192ce || true
-  modprobe e1000 || true
-  modprobe e1000e || true
-  modprobe pcnet32 || true
-  modprobe -q usb-storage || true
-  modprobe -q sr_mod     || true
-  modprobe -q xhci_hcd   || true
-  modprobe -q ehci_hcd   || true
-  modprobe -q uhci_hcd   || true
-  modprobe -q vboxvideo  || true
-  modprobe -q virtio_gpu || true
-  modprobe -q vmwgfx     || true
-  modprobe -q drm        || true
-  modprobe -q virtio_net || true
+  # Modules sudah di-load di early boot sebelum udevadm trigger
+  # Hanya load yang belum / perlu parameter khusus
   modprobe -q loop max_loop=64 || true
   modprobe -q dm_mod     || true
 
@@ -1078,7 +1091,46 @@ if [ -z "$UDEVD" ]; then
   mdev -s 2>/dev/null || true
 else
   $UDEVD --daemon --resolve-names=never 2>/dev/null
-  sleep 2
+  sleep 1
+
+  # Load storage & filesystem modules SEBELUM trigger
+  # agar udev bisa detect device dengan benar
+  log_msg "Loading early modules (storage, fs, net)..."
+  modprobe -q loop       || true
+  modprobe -q squashfs   || true
+  modprobe -q overlay    || true
+  modprobe -q iso9660    || true
+  modprobe -q vfat       || true
+  modprobe -q exfat      || true
+  modprobe -q usb-storage || true
+  modprobe -q sr_mod     || true
+  modprobe -q xhci_hcd   || true
+  modprobe -q ehci_hcd   || true
+  modprobe -q uhci_hcd   || true
+
+  # Network modules — WAJIB sebelum udevadm trigger
+  # supaya udev bisa rename/detect interface dengan benar
+  log_msg "Loading network modules early..."
+  modprobe -q e1000      || true
+  modprobe -q e1000e     || true
+  modprobe -q pcnet32    || true
+  modprobe -q virtio_net || true
+  modprobe -q vmxnet3    || true
+  # WiFi
+  modprobe -q mac80211   || true
+  modprobe -q cfg80211   || true
+  modprobe -q r8188eu    || true
+  modprobe -q rtl8192ce  || true
+  modprobe -q rtl8xxxu   || true
+  modprobe -q ath9k      || true
+  modprobe -q iwlwifi    || true
+  modprobe -q brcmfmac   || true
+  # GPU / display
+  modprobe -q vboxvideo  || true
+  modprobe -q virtio_gpu || true
+  modprobe -q vmwgfx     || true
+  modprobe -q drm        || true
+
   udevadm trigger --action=add 2>/dev/null || true
   udevadm settle --timeout=30 2>/dev/null || true
   log_msg "udev ready"
