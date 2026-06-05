@@ -813,6 +813,21 @@ else
     PS1='\u@\h:\w\$ '
 fi
 
+# =====================================================
+  # /etc/bashrc global — PS1 otomatis beda warna root vs user
+  # =====================================================
+  cat > /.root/etc/bashrc << 'EOF'
+# /etc/bashrc - Global bash settings
+
+# PS1 berdasarkan user: merah untuk root, hijau untuk user biasa
+if [ "$EUID" -eq 0 ]; then
+    # Root — merah
+    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\# '
+else
+    # User biasa — hijau
+    PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+fi
+
 # Color support for ls
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
