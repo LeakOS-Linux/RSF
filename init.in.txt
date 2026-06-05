@@ -1,5 +1,10 @@
 #!/bin/sh
 # Init script for LeakOS Live ISO
+# Auto-detect boot media, robust /proc mount handling
+# Fixed: try_mount global, Ventoy loop timing, case pattern, exfat support
+# FIXED: ensure_users works correctly with overlay
+# REMOVED: Public and Templates directories
+# FIXED: live user with correct MD5 password hash
 
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
@@ -581,6 +586,7 @@ export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 
 # Welcome message
 echo "Welcome to LeakOS Live!"
+echo "Type 'help' for available commands"
 EOF
 
   # .profile untuk live
@@ -717,7 +723,7 @@ mkdir -p /.root/etc/udev/rules.d
 # Udev rules for persistent network interface names
 # Rename first WiFi interface to wlan0
 
-SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", KERNEL=="wl*|wlan*|wlp*", ATTR{type}=="1", NAME="wlan0"
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", KERNEL=="wl*|wlan*|wlp*|wi*", ATTR{type}=="1", NAME="wlan0"
 EOF
 
   cat > /.root/etc/udev/rules.d/71-wifi-detection.rules << 'EOF'
@@ -826,8 +832,8 @@ alias ...='cd ../..'
 # Custom PATH
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 
-# Welcome message
-echo "Welcome to LeakOS Live!"
+# (no duplicate welcome message)
+echo "Type 'help' for available commands"
 EOF
 
   # .profile untuk root — wajib agar sudo su baca .bashrc
@@ -931,6 +937,17 @@ polkit.addAdminRule(function(action, subject) {
 });
 EOF
 
+  # =====================================================
+  # Konfigurasi LightDM
+  # =====================================================
+  mkdir -p /.root/etc/lightdm
+  cat > /.root/etc/lightdm/lightdm.conf << 'EOF'
+[Seat:*]
+autologin-user=live
+autologin-user-timeout=0
+user-session=xfce
+greeter-session=lightdm-gtk-greeter
+EOF
 
   # =====================================================
   # Setup NetworkManager config
@@ -949,6 +966,16 @@ EOF
     echo "leakos-$(date +%Y%m%d)" > /.root/etc/machine-id
   fi
 
+  # =====================================================
+  # Create /etc/resolv.conf (fallback)
+  # =====================================================
+  if [ ! -f /.root/etc/resolv.conf ]; then
+    cat > /.root/etc/resolv.conf << 'EOF'
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+nameserver 1.1.1.1
+EOF
+  fi
 
   # =====================================================
   # /etc/bashrc global — PS1 otomatis beda warna root vs user
@@ -959,7 +986,7 @@ EOF
 # PS1 berdasarkan user: merah untuk root, hijau untuk user biasa
 if [ "$EUID" -eq 0 ]; then
     # Root — merah
-    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\# '
+    PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
     # User biasa — hijau
     PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
@@ -1044,7 +1071,7 @@ do_mount_root() {
   log_msg "Overlay mounted at /.root"
 
   # Pastikan direktori penting ada setelah overlay
-  mkdir -p /.root/etc /.root/home /.root/var/log /.root/tmp /.root/run
+  mkdir -p /.root/etc /.root/home /.root/root /.root/var/log /.root/tmp /.root/run
   mkdir -p /.root/var/lib /.root/var/spool /.root/var/cache
   
   # Copy resolv.conf jika ada
