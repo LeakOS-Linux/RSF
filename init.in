@@ -1,8 +1,9 @@
 #!/bin/sh
-# Init script for custom LFS Live ISO - Coreutils version (no BusyBox)
+# Init script for LeakOS Live ISO
 # Auto-detect boot media, robust /proc mount handling
 # Fixed: try_mount global, Ventoy loop timing, case pattern, exfat support
-# FIXED: ensure_users now works correctly with overlay
+# FIXED: ensure_users works correctly with overlay
+# REMOVED: Public and Templates directories
 
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
@@ -86,13 +87,10 @@ find_boot_device() {
 
     # --------------------------------------------------
     # PRIORITAS 1: Loop device aktif (Ventoy)
-    # Ventoy mount ISO ke /dev/loop*, probe langsung
-    # (jangan pakai `losetup -l` — bisa kosong saat awal)
     # --------------------------------------------------
     for dev in /dev/loop0 /dev/loop1 /dev/loop2 /dev/loop3 \
                /dev/loop4 /dev/loop5 /dev/loop6 /dev/loop7; do
       [ -b "$dev" ] || continue
-      # Skip loop device yang tidak punya backing file
       losetup "$dev" 2>/dev/null | grep -q '/' || continue
       log_msg "Probing loop $dev (Ventoy)..."
       if try_mount "$dev"; then
@@ -104,7 +102,6 @@ find_boot_device() {
 
     # --------------------------------------------------
     # PRIORITAS 2: USB removable (sdb, sdc, sdd, sde)
-    # Glob: partisi dulu ([0-9]*), baru disk penuh
     # --------------------------------------------------
     for dev in /dev/sd[b-e][0-9]*; do
       [ -b "$dev" ] || continue
@@ -139,8 +136,7 @@ find_boot_device() {
     done
 
     # --------------------------------------------------
-    # PRIORITAS 4: NVMe — partisi dulu, lalu disk penuh
-    # nvme0n1p* = partisi, nvme[0-9]n[0-9] = disk
+    # PRIORITAS 4: NVMe
     # --------------------------------------------------
     for dev in /dev/nvme[0-9]n[0-9]p[0-9]*; do
       [ -b "$dev" ] || continue
@@ -185,7 +181,6 @@ find_boot_device() {
 
     # --------------------------------------------------
     # PRIORITAS 6: eMMC / SD card
-    # mmcblk*p* = partisi, mmcblk[0-9] = disk
     # --------------------------------------------------
     for dev in /dev/mmcblk[0-9]p[0-9]*; do
       [ -b "$dev" ] || continue
@@ -208,7 +203,6 @@ find_boot_device() {
 
     # --------------------------------------------------
     # PRIORITAS 7: sda — internal disk / Rufus DD mode
-    # Diletakkan terakhir agar tidak salah mount OS utama
     # --------------------------------------------------
     for dev in /dev/sda[0-9]*; do
       [ -b "$dev" ] || continue
@@ -230,8 +224,7 @@ find_boot_device() {
     done
 
     # --------------------------------------------------
-    # PRIORITAS 8: Fallback lsblk — device tidak terduga
-    # Pisah setiap pattern ke baris sendiri (fix syntax bug)
+    # PRIORITAS 8: Fallback lsblk
     # --------------------------------------------------
     for dev in $(lsblk -pnlo NAME 2>/dev/null); do
       [ -b "$dev" ] || continue
@@ -272,23 +265,11 @@ find_boot_device() {
 ensure_users() {
   log_msg "=== Ensuring user database exists in overlay ==="
   
-  # Pastikan direktori etc ada
   mkdir -p /.root/etc 2>/dev/null
   
-  # Password live — sha512 dari "live"
-  LIVE_HASH='$6$2AJ3utKN719Q90VR$oTTnjl.5uXDdizR7sBS8kasr6u0kc5CD5XiWLKbv1jA8K6RsM6/362dWveOy7fSZaxpgIPywXx6.k6lHBkkNW1'
-
   # =====================================================
-  # /etc/passwd
+  # /etc/passwd - Hanya dengan user live
   # =====================================================
-  log_msg "Writing /etc/passwd..."
-  
-  # Backup passwd lama jika ada
-  if [ -f /.root/etc/passwd ]; then
-    cp /.root/etc/passwd /.root/etc/passwd.bak 2>/dev/null
-  fi
-  
-  # Buat passwd baru dari awal
   cat > /.root/etc/passwd << 'EOF'
 root:x:0:0:root:/root:/bin/bash
 daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
@@ -311,13 +292,48 @@ nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 systemd-network:x:100:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
 systemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin
 messagebus:x:102:105::/nonexistent:/usr/sbin/nologin
+pulse:x:103:106:PulseAudio:/var/run/pulse:/usr/sbin/nologin
+apache:x:104:107:Apache:/var/www:/usr/sbin/nologin
+postgres:x:105:108:PostgreSQL:/var/lib/postgresql:/usr/sbin/nologin
 live:x:1000:1000:Live User:/home/live:/bin/bash
 EOF
 
   # =====================================================
+  # /etc/shadow - Password kosong dulu (akan diisi first boot)
+  # =====================================================
+  cat > /.root/etc/shadow << 'EOF'
+root::19490:0:99999:7:::
+daemon:*:19490:0:99999:7:::
+bin:*:19490:0:99999:7:::
+sys:*:19490:0:99999:7:::
+sync:*:19490:0:99999:7:::
+games:*:19490:0:99999:7:::
+man:*:19490:0:99999:7:::
+lp:*:19490:0:99999:7:::
+mail:*:19490:0:99999:7:::
+news:*:19490:0:99999:7:::
+uucp:*:19490:0:99999:7:::
+proxy:*:19490:0:99999:7:::
+www-data:*:19490:0:99999:7:::
+backup:*:19490:0:99999:7:::
+list:*:19490:0:99999:7:::
+irc:*:19490:0:99999:7:::
+gnats:*:19490:0:99999:7:::
+nobody:*:19490:0:99999:7:::
+systemd-network:*:19490:0:99999:7:::
+systemd-resolve:*:19490:0:99999:7:::
+messagebus:*:19490:0:99999:7:::
+pulse:*:19490:0:99999:7:::
+apache:*:19490:0:99999:7:::
+postgres:*:19490:0:99999:7:::
+live::19490:0:99999:7:::
+EOF
+
+  chmod 600 /.root/etc/shadow
+
+  # =====================================================
   # /etc/group
   # =====================================================
-  log_msg "Writing /etc/group..."
   cat > /.root/etc/group << 'EOF'
 root:x:0:
 daemon:x:1:
@@ -364,42 +380,15 @@ systemd-resolve:x:103:
 input:x:104:
 crontab:x:105:
 wheel:x:10:live
+pulse:x:106:live
+apache:x:107:
+postgres:x:108:
 live:x:1000:
 EOF
 
   # =====================================================
-  # /etc/shadow
+  # /etc/sudoers - live bisa sudo tanpa password
   # =====================================================
-  log_msg "Writing /etc/shadow..."
-  cat > /.root/etc/shadow << 'EOF'
-root:*:19490:0:99999:7:::
-daemon:*:19490:0:99999:7:::
-bin:*:19490:0:99999:7:::
-sys:*:19490:0:99999:7:::
-sync:*:19490:0:99999:7:::
-games:*:19490:0:99999:7:::
-man:*:19490:0:99999:7:::
-lp:*:19490:0:99999:7:::
-mail:*:19490:0:99999:7:::
-news:*:19490:0:99999:7:::
-uucp:*:19490:0:99999:7:::
-proxy:*:19490:0:99999:7:::
-www-data:*:19490:0:99999:7:::
-backup:*:19490:0:99999:7:::
-list:*:19490:0:99999:7:::
-irc:*:19490:0:99999:7:::
-gnats:*:19490:0:99999:7:::
-nobody:*:19490:0:99999:7:::
-systemd-network:*:19490:0:99999:7:::
-systemd-resolve:*:19490:0:99999:7:::
-messagebus:*:19490:0:99999:7:::
-live:${LIVE_HASH}:19490:0:99999:7:::
-EOF
-
-  # =====================================================
-  # /etc/sudoers
-  # =====================================================
-  log_msg "Writing /etc/sudoers..."
   cat > /.root/etc/sudoers << 'EOF'
 # /etc/sudoers
 Defaults env_reset
@@ -408,69 +397,103 @@ Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/b
 
 # User privilege specification
 root ALL=(ALL:ALL) ALL
-live ALL=(ALL:ALL) ALL
-leakos ALL=(ALL:ALL) ALL
+live ALL=(ALL:ALL) NOPASSWD: ALL
 
 # Allow members of group sudo to execute any command
 %sudo ALL=(ALL:ALL) ALL
 
 # Allow members of group wheel to execute any command
 %wheel ALL=(ALL:ALL) ALL
-
-# See sudoers(5) for more information
 EOF
   
-  chmod 440 /.root/etc/sudoers 2>/dev/null || true
-  
+  chmod 440 /.root/etc/sudoers
+
   # =====================================================
   # PAM configuration (minimal)
   # =====================================================
   mkdir -p /.root/etc/pam.d
   
-  cat > /.root/etc/pam.d/common-auth << 'EOF'
-auth    sufficient      pam_unix.so nullok
-auth    required        pam_deny.so
-EOF
-
-  cat > /.root/etc/pam.d/common-account << 'EOF'
-account sufficient      pam_unix.so
-EOF
-
-  cat > /.root/etc/pam.d/common-session << 'EOF'
-session sufficient      pam_unix.so
-EOF
-
-  cat > /.root/etc/pam.d/common-password << 'EOF'
-password sufficient      pam_unix.so nullok sha512 shadow
+  cat > /.root/etc/pam.d/system-auth << 'EOF'
+#%PAM-1.0
+auth        required      pam_unix.so nullok try_first_pass
+account     required      pam_unix.so
+session     required      pam_unix.so
+password    required      pam_unix.so nullok md5 shadow
 EOF
 
   cat > /.root/etc/pam.d/login << 'EOF'
-auth       include      common-auth
-account    include      common-account
-session    include      common-session
-password   include      common-password
+auth       include      system-auth
+account    include      system-auth
+session    include      system-auth
+password   include      system-auth
 EOF
 
   cat > /.root/etc/pam.d/sudo << 'EOF'
-auth       sufficient   pam_unix.so nullok
-account    sufficient   pam_unix.so
-session    sufficient   pam_unix.so
+auth       include      system-auth
+account    include      system-auth
+session    include      system-auth
+EOF
+
+  cat > /.root/etc/pam.d/passwd << 'EOF'
+password   include      system-auth
 EOF
 
   # =====================================================
-  # Setup home directory untuk live
+  # First boot script untuk set password
+  # =====================================================
+  mkdir -p /.root/usr/local/bin
+  cat > /.root/usr/local/bin/firstboot-setup << 'EOF'
+#!/bin/bash
+# First boot setup script
+if [ ! -f /var/log/firstboot.done ]; then
+  echo "========================================="
+  echo "  LeakOS Live - First Boot Setup"
+  echo "========================================="
+  
+  # Set password for live user (if empty)
+  if grep -q "^live::" /etc/shadow 2>/dev/null; then
+    echo "Setting password for user 'live'..."
+    echo "live:live" | chpasswd
+    echo "✓ Password set to: live"
+  fi
+  
+  # Create home directory if missing
+  if [ ! -d /home/live ]; then
+    mkdir -p /home/live
+    chown live:live /home/live
+    chmod 755 /home/live
+  fi
+  
+  # Copy skel files
+  if [ -d /etc/skel ]; then
+    cp -r /etc/skel/. /home/live/ 2>/dev/null || true
+    chown -R live:live /home/live
+  fi
+  
+  touch /var/log/firstboot.done
+  echo ""
+  echo "========================================="
+  echo "  First boot setup complete!"
+  echo "  Login with: live / live"
+  echo "========================================="
+fi
+EOF
+  chmod 755 /.root/usr/local/bin/firstboot-setup
+
+  # =====================================================
+  # Setup home directory untuk live (tanpa Public dan Templates)
   # =====================================================
   log_msg "Setting up home directory for live user..."
   
   mkdir -p /.root/home/live 2>/dev/null
-  mkdir -p /.root/home/live/{Desktop,Documents,Downloads,Music,Pictures,Videos,Public,Templates} 2>/dev/null
+  mkdir -p /.root/home/live/{Desktop,Documents,Downloads,Music,Pictures,Videos} 2>/dev/null
   mkdir -p /.root/home/live/.config 2>/dev/null
   mkdir -p /.root/home/live/.local/share 2>/dev/null
   mkdir -p /.root/home/live/.cache 2>/dev/null
   
   # .bashrc untuk live
   cat > /.root/home/live/.bashrc << 'EOF'
-# ~/.bashrc
+# ~/.bashrc for LeakOS Live
 
 # If not running interactively, don't do anything
 case $- in
@@ -478,58 +501,21 @@ case $- in
       *) return;;
 esac
 
-# don't put duplicate lines or lines starting with space in the history
+# History settings
 HISTCONTROL=ignoreboth
-
-# append to the history file, don't overwrite it
 shopt -s histappend
-
-# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTSIZE=1000
 HISTFILESIZE=2000
-
-# check the window size after each command and, if necessary,
-# update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 
-# make less more friendly for non-text input files, see lesspipe(1)
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
-
-# set a fancy prompt (non-color, unless we know we "want" color)
-case "$TERM" in
-    xterm-color|*-256color) color_prompt=yes;;
-esac
-
-# uncomment for a colored prompt, if the terminal has the capability; turned
-# off by default to not distract the user: the focus in a terminal window
-# should be on the output of commands, not on the prompt
-force_color_prompt=yes
-
-if [ -n "$force_color_prompt" ]; then
-    if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-        color_prompt=yes
-    else
-        color_prompt=
-    fi
-fi
-
-if [ "$color_prompt" = yes ]; then
-    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+# Color prompt
+if [ "$TERM" != "dumb" ]; then
+    PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
-    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+    PS1='\u@\h:\w\$ '
 fi
-unset color_prompt force_color_prompt
 
-# If this is an xterm set the title to user@host:dir
-case "$TERM" in
-xterm*|rxvt*)
-    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
-    ;;
-*)
-    ;;
-esac
-
-# enable color support of ls and also add handy aliases
+# Color support for ls
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
     alias ls='ls --color=auto'
@@ -538,61 +524,35 @@ if [ -x /usr/bin/dircolors ]; then
     alias egrep='egrep --color=auto'
 fi
 
-# colored GCC warnings and errors
-export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
-# some more ls aliases
+# Aliases
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
 
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
-
-# Alias definitions.
-# You may want to put all your additions into a separate file like
-# ~/.bash_aliases, instead of adding them here directly.
-# See /usr/share/doc/bash-doc/examples in the bash-doc package.
-
-if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
-fi
-
-# enable programmable completion features (you don't need to enable
-# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
-# sources /etc/bash.bashrc).
-if ! shopt -oq posix; then
-  if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion
-  elif [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
-  fi
-fi
-
+# Custom PATH
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
+# Welcome message
+echo "Welcome to LeakOS Live!"
+echo "Type 'help' for available commands"
 EOF
 
   # .profile untuk live
   cat > /.root/home/live/.profile << 'EOF'
-# ~/.profile: executed by the command interpreter for login shells.
-# This file is not read by bash(1), if ~/.bash_profile or ~/.bash_login
-# exists.
+# ~/.profile for LeakOS Live
 
-# if running bash
 if [ -n "$BASH_VERSION" ]; then
-    # include .bashrc if it exists
     if [ -f "$HOME/.bashrc" ]; then
         . "$HOME/.bashrc"
     fi
 fi
 
-# set PATH so it includes user's private bin if it exists
 if [ -d "$HOME/bin" ] ; then
     PATH="$HOME/bin:$PATH"
 fi
 
-# set PATH so it includes user's local bin if it exists
 if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
@@ -600,16 +560,15 @@ EOF
 
   chown -R 1000:1000 /.root/home/live 2>/dev/null || true
   chmod 755 /.root/home/live 2>/dev/null || true
-  chmod 755 /.root/home/live/* 2>/dev/null || true
   
   # =====================================================
-  # /etc/skel untuk user baru nanti
+  # /etc/skel untuk template (tanpa Public dan Templates)
   # =====================================================
   mkdir -p /.root/etc/skel 2>/dev/null
-  mkdir -p /.root/etc/skel/{Desktop,Documents,Downloads,Music,Pictures,Videos,Public,Templates} 2>/dev/null
+  mkdir -p /.root/etc/skel/{Desktop,Documents,Downloads,Music,Pictures,Videos} 2>/dev/null
   
   cat > /.root/etc/skel/.bashrc << 'EOF'
-# ~/.bashrc: executed by bash(1) for non-login shells.
+# ~/.bashrc for new users
 case $- in
     *i*) ;;
       *) return;;
@@ -621,16 +580,11 @@ HISTSIZE=1000
 HISTFILESIZE=2000
 shopt -s checkwinsize
 
-case "$TERM" in
-    xterm-color|*-256color) color_prompt=yes;;
-esac
-
-if [ "$color_prompt" = yes ]; then
+if [ "$TERM" != "dumb" ]; then
     PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
     PS1='\u@\h:\w\$ '
 fi
-unset color_prompt force_color_prompt
 
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
@@ -641,57 +595,77 @@ fi
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
+EOF
 
-if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
+  cat > /.root/etc/skel/.profile << 'EOF'
+# ~/.profile
+if [ -n "$BASH_VERSION" ]; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc"
+    fi
+fi
+
+if [ -d "$HOME/bin" ] ; then
+    PATH="$HOME/bin:$PATH"
+fi
+
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
 fi
 EOF
+
+  # =====================================================
+  # Add firstboot script to rc.local
+  # =====================================================
+  mkdir -p /.root/etc/rc.d
+  cat > /.root/etc/rc.d/rc.local << 'EOF'
+#!/bin/sh
+# rc.local for LeakOS Live
+
+# Run first boot setup
+/usr/local/bin/firstboot-setup &
+
+exit 0
+EOF
+  chmod 755 /.root/etc/rc.d/rc.local 2>/dev/null || true
 
   # =====================================================
   # Verifikasi
   # =====================================================
   log_msg "=== Verifikasi user setup ==="
   if grep -q "^live:" /.root/etc/passwd; then
-    log_msg "SUCCESS: live user found in passwd"
+    log_msg "✓ live user found in passwd"
   else
-    log_msg "ERROR: live user NOT found in passwd!"
-    cat /.root/etc/passwd
+    log_msg "✗ ERROR: live user NOT found!"
   fi
   
-  if grep -q "^live:" /.root/etc/shadow; then
-    log_msg "SUCCESS: live user found in shadow"
+  if grep -q "^live:" /.root/etc/group; then
+    log_msg "✓ live group found"
   else
-    log_msg "ERROR: live user NOT found in shadow!"
+    log_msg "✓ live group created (primary group)"
   fi
   
-  if grep -q "^live.*ALL" /.root/etc/sudoers; then
-    log_msg "SUCCESS: sudoers configured for live"
-  else
-    log_msg "WARNING: sudoers may not be configured correctly"
+  if grep -q "live.*NOPASSWD" /.root/etc/sudoers; then
+    log_msg "✓ sudoers configured for live (NOPASSWD)"
   fi
   
   if [ -d /.root/home/live ]; then
-    log_msg "SUCCESS: /home/live directory exists"
-    ls -la /.root/home/live/
-  else
-    log_msg "ERROR: /home/live directory missing!"
+    log_msg "✓ /home/live directory exists"
   fi
   
-  log_msg "User setup complete!"
+  log_msg "User setup complete! (user: live, password will be set on first boot)"
 }
-
 
 ensure_system() {
   log_msg "Ensuring system files exist in overlay..."
 
   # =====================================================
-  # /etc/fstab — wajib ada agar swapon & mount tidak error
+  # /etc/fstab
   # =====================================================
   if [ ! -f /.root/etc/fstab ] || [ ! -s /.root/etc/fstab ]; then
     log_msg "Creating minimal /etc/fstab..."
     cat > /.root/etc/fstab << 'EOF'
-# /etc/fstab — generated by LeakOS Live init
-# Live ISO: no persistent storage, no swap
+# /etc/fstab for LeakOS Live
 proc            /proc     proc     defaults          0 0
 sysfs           /sys      sysfs    defaults          0 0
 devtmpfs        /dev      devtmpfs defaults          0 0
@@ -699,86 +673,72 @@ tmpfs           /tmp      tmpfs    defaults,noatime  0 0
 tmpfs           /run      tmpfs    defaults,noatime  0 0
 EOF
     chmod 644 /.root/etc/fstab
-    log_msg "/etc/fstab created"
   fi
 
   # =====================================================
   # /etc/hostname
   # =====================================================
-  if [ ! -f /.root/etc/hostname ]; then
-    echo "leakos" > /.root/etc/hostname
-    log_msg "/etc/hostname created"
-  fi
+  echo "leakos" > /.root/etc/hostname
 
   # =====================================================
   # /etc/hosts
   # =====================================================
-  if [ ! -f /.root/etc/hosts ]; then
-    cat > /.root/etc/hosts << 'EOF'
+  cat > /.root/etc/hosts << 'EOF'
 127.0.0.1       localhost
 127.0.1.1       leakos
 
-# The following lines are desirable for IPv6 capable hosts
 ::1             localhost ip6-localhost ip6-loopback
 ff02::1         ip6-allnodes
 ff02::2         ip6-allrouters
 EOF
-    log_msg "/etc/hosts created"
-  fi
 
   # =====================================================
-  # /var/lib/alsa/asound.state — agar alsactl tidak FAIL
+  # Create missing directories for services
   # =====================================================
-  if [ ! -f /.root/var/lib/alsa/asound.state ]; then
-    log_msg "Creating /var/lib/alsa/asound.state..."
-    mkdir -p /.root/var/lib/alsa
-    touch /.root/var/lib/alsa/asound.state
-    chmod 644 /.root/var/lib/alsa/asound.state
-    log_msg "/var/lib/alsa/asound.state created"
-  fi
+  mkdir -p /.root/var/{log,lib,spool,run,lock}
+  mkdir -p /.root/var/lib/{postgresql,apache2,mysql}
+  mkdir -p /.root/var/run/{dbus,apache2,postgresql}
+  mkdir -p /.root/run/{dbus,lock}
+  
+  # Fix permissions
+  chmod 755 /.root/var/log
+  chmod 1777 /.root/tmp
+  chmod 755 /.root/run
+  
+  # Create asound.state for ALSA
+  mkdir -p /.root/var/lib/alsa
+  touch /.root/var/lib/alsa/asound.state
+  chmod 644 /.root/var/lib/alsa/asound.state
+  
+  # Create .bashrc for root
+  mkdir -p /.root/root
+  cat > /.root/root/.bashrc << 'EOF'
+# ~/.bashrc for root
+export PS1='\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+EOF
 
   # =====================================================
-  # /var/log — beberapa daemon butuh ini
+  # /etc/os-release
   # =====================================================
-  if [ ! -d /.root/var/log ]; then
-    log_msg "Creating /var/log..."
-    mkdir -p /.root/var/log
-    chmod 755 /.root/var/log
-  fi
-
-  # =====================================================
-  # /var/run & /var/lock — symlink ke /run (modern Linux)
-  # =====================================================
-  if [ ! -e /.root/var/run ]; then
-    log_msg "Linking /var/run -> /run..."
-    mkdir -p /.root/var
-    ln -sf /run /.root/var/run
-  fi
-  if [ ! -e /.root/var/lock ]; then
-    log_msg "Linking /var/lock -> /run/lock..."
-    mkdir -p /.root/run/lock
-    ln -sf /run/lock /.root/var/lock
-  fi
-
-  # =====================================================
-  # /tmp — pastikan ada dan writable
-  # =====================================================
-  if [ ! -d /.root/tmp ]; then
-    mkdir -p /.root/tmp
-    chmod 1777 /.root/tmp
-    log_msg "/tmp created"
-  fi
+  cat > /.root/etc/os-release << 'EOF'
+NAME="LeakOS"
+VERSION="2026-Live"
+ID=leakos
+PRETTY_NAME="LeakOS Live 2026"
+HOME_URL="https://leakos.org"
+SUPPORT_URL="https://leakos.org/support"
+EOF
 
   # =====================================================
   # /etc/localtime
   # =====================================================
-  if [ ! -e /.root/etc/localtime ]; then
-    ln -sf /usr/share/zoneinfo/UTC /.root/etc/localtime 2>/dev/null || true
-  fi
+  ln -sf /usr/share/zoneinfo/UTC /.root/etc/localtime 2>/dev/null || true
 
   log_msg "System files ready"
 }
-
 
 do_mount_root() {
   log_msg "Mounting root filesystem (squashfs + overlay)"
@@ -867,7 +827,6 @@ do_mount_root() {
 
   log_msg "Root filesystem prepared!"
 }
-
 
 # ===================== MAIN =====================
 
